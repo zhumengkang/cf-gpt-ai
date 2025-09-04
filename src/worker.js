@@ -536,6 +536,64 @@ function extractTextFromResponse(response, modelConfig) {
   return `无法从响应中提取文本内容。响应结构: ${Object.keys(response).join(', ')}`;
 }
 
+// 自动检测并格式化代码内容
+function autoDetectAndFormatCode(text) {
+  // 检测常见编程语言的模式
+  const codePatterns = [
+    // Python
+    { pattern: /^(import\s+\w+|from\s+\w+\s+import|def\s+\w+|class\s+\w+|if\s+__name__|for\s+\w+\s+in|while\s+.+:|try:|except:)/m, lang: 'python' },
+    // JavaScript
+    { pattern: /^(function\s+\w+|const\s+\w+|let\s+\w+|var\s+\w+|=>\s*{|console\.log|document\.|window\.)/m, lang: 'javascript' },
+    // HTML
+    { pattern: /^<[^>]+>.*<\/[^>]+>$/m, lang: 'html' },
+    // CSS
+    { pattern: /^[^{}]*{[^{}]*}$/m, lang: 'css' },
+    // SQL
+    { pattern: /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER|DROP)\s+/mi, lang: 'sql' },
+    // JSON
+    { pattern: /^{\s*"[^"]+"\s*:\s*.+}$/m, lang: 'json' },
+    // Shell/Bash
+    { pattern: /^(#!\/bin\/|curl\s+|wget\s+|sudo\s+|apt\s+|npm\s+|pip\s+|git\s+)/m, lang: 'bash' }
+  ];
+
+  // 如果文本看起来像代码且没有被标记，自动添加代码块标记
+  for (const { pattern, lang } of codePatterns) {
+    if (pattern.test(text) && !text.includes('```')) {
+      // 检查是否有多行且有缩进，如果是则可能是完整的代码块
+      const lines = text.split('\n');
+      if (lines.length > 3 && lines.some(line => line.startsWith('  ') || line.startsWith('\t'))) {
+        return `\`\`\`${lang}\n${text}\n\`\`\``;
+      }
+    }
+  }
+  
+  return text;
+}
+
+// 检测代码语言
+function detectLanguage(code) {
+  const langPatterns = [
+    { pattern: /^(import\s|from\s.*import|def\s|class\s|if\s+__name__|print\()/m, lang: 'python' },
+    { pattern: /^(function\s|const\s|let\s|var\s|console\.log|document\.|window\.)/m, lang: 'javascript' },
+    { pattern: /^(<\?php|namespace\s|use\s|\$\w+\s*=)/m, lang: 'php' },
+    { pattern: /^(#include|int\s+main|printf\(|cout\s*<<)/m, lang: 'cpp' },
+    { pattern: /^(public\s+(class|static)|import\s+java|System\.out)/m, lang: 'java' },
+    { pattern: /^(SELECT|INSERT|UPDATE|DELETE|CREATE|ALTER)/mi, lang: 'sql' },
+    { pattern: /^<[^>]+>.*<\/[^>]+>/m, lang: 'html' },
+    { pattern: /^[^{}]*\{[^{}]*\}/m, lang: 'css' },
+    { pattern: /^(#!\/bin\/|curl\s|wget\s|sudo\s|apt\s|npm\s|pip\s|git\s)/m, lang: 'bash' },
+    { pattern: /^{\s*"[^"]+"\s*:/m, lang: 'json' }
+  ];
+
+  for (const { pattern, lang } of langPatterns) {
+    if (pattern.test(code)) {
+      return lang;
+    }
+  }
+  
+  return 'text';
+}
+
 // 格式化Markdown内容
 function formatMarkdown(text) {
   // 安全检查
@@ -543,6 +601,9 @@ function formatMarkdown(text) {
     console.warn('formatMarkdown收到无效输入:', { text, type: typeof text });
     return text || '';
   }
+  
+  // 首先进行代码自动检测
+  text = autoDetectAndFormatCode(text);
   
   // 转义HTML特殊字符
   function escapeHtml(str) {
@@ -555,15 +616,18 @@ function formatMarkdown(text) {
   }
   
   // 处理多行代码块 - 保持原始格式和换行
-  text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-    // 不要 trim，保持原始缩进和换行
-    const escapedCode = escapeHtml(code);
+  text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
+    // 保持原始缩进和换行，只去掉首尾空行
+    const cleanCode = code.replace(/^\n+|\n+$/g, '');
+    const escapedCode = escapeHtml(cleanCode);
+    const detectedLang = lang || detectLanguage(cleanCode);
+    
     return `<div class="code-block">
       <div class="code-header">
-        <span class="language">${lang || 'text'}</span>
+        <span class="language">${detectedLang}</span>
         <button class="copy-btn" onclick="copyCode(this)">复制</button>
       </div>
-      <pre><code class="language-${lang || 'text'}">${escapedCode}</code></pre>
+      <pre><code class="language-${detectedLang}">${escapedCode}</code></pre>
     </div>`;
   });
   
@@ -671,16 +735,76 @@ function getHTML() {
         .loading { display: none; text-align: center; padding: 20px; color: #6b7280; }
         .error { background: #fef2f2; color: #dc2626; padding: 10px; border-radius: 8px; margin: 10px 0; }
         .success { background: #f0f9ff; color: #0369a1; padding: 10px; border-radius: 8px; margin: 10px 0; }
-        .code-block { margin: 15px 0; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
-        .code-header { background: #f8fafc; padding: 8px 15px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; }
-        .language { font-size: 12px; color: #64748b; font-weight: 500; }
-        .copy-btn { background: #3b82f6; color: white; border: none; padding: 4px 8px; border-radius: 4px; font-size: 12px; cursor: pointer; }
-        .copy-btn:hover { background: #2563eb; }
-        .copy-btn:active { background: #1d4ed8; }
-        pre { background: #f8fafc; padding: 15px; margin: 0; overflow-x: auto; line-height: 1.5; }
-        code { font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 13px; }
-        .inline-code { background: #e5e7eb; padding: 2px 6px; border-radius: 4px; font-family: 'Consolas', 'Monaco', 'Courier New', monospace; font-size: 13px; }
-        .code-block code { background: none; padding: 0; color: #1f2937; }
+        .code-block { 
+            margin: 15px 0; 
+            border-radius: 8px; 
+            overflow: hidden; 
+            border: 1px solid #d1d5db; 
+            background: #ffffff;
+            box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+        }
+        .code-header { 
+            background: #f9fafb; 
+            padding: 8px 15px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid #e5e7eb;
+            font-size: 12px;
+        }
+        .language { 
+            font-size: 12px; 
+            color: #6b7280; 
+            font-weight: 500; 
+            text-transform: uppercase;
+        }
+        .copy-btn { 
+            background: #374151; 
+            color: white; 
+            border: none; 
+            padding: 6px 12px; 
+            border-radius: 4px; 
+            font-size: 11px; 
+            cursor: pointer; 
+            transition: all 0.2s;
+            font-weight: 500;
+        }
+        .copy-btn:hover { 
+            background: #1f2937; 
+            transform: translateY(-1px);
+        }
+        .copy-btn:active { 
+            background: #111827; 
+            transform: translateY(0);
+        }
+        pre { 
+            background: #ffffff; 
+            padding: 16px; 
+            margin: 0; 
+            overflow-x: auto; 
+            line-height: 1.5;
+            font-size: 14px;
+        }
+        code { 
+            font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace; 
+            font-size: 14px; 
+        }
+        .inline-code { 
+            background: #f3f4f6; 
+            padding: 2px 6px; 
+            border-radius: 4px; 
+            font-family: 'Fira Code', 'Consolas', 'Monaco', 'Courier New', monospace; 
+            font-size: 13px;
+            color: #374151;
+            border: 1px solid #e5e7eb;
+        }
+        .code-block code { 
+            background: none; 
+            padding: 0; 
+            color: #1f2937;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
         
         /* Markdown 样式 */
         .md-h1 { font-size: 24px; font-weight: bold; color: #1f2937; margin: 20px 0 10px 0; border-bottom: 2px solid #e5e7eb; padding-bottom: 5px; }
@@ -990,7 +1114,7 @@ function getHTML() {
             setTimeout(() => div.remove(), 3000);
         }
         
-        // 复制代码功能
+        // 增强的复制代码功能
         function copyCode(button) {
             const codeBlock = button.closest('.code-block');
             const code = codeBlock.querySelector('pre code');
@@ -998,21 +1122,77 @@ function getHTML() {
             
             navigator.clipboard.writeText(text).then(() => {
                 const originalText = button.textContent;
+                const originalBg = button.style.background;
+                
                 button.textContent = '已复制!';
                 button.style.background = '#10b981';
+                button.style.color = 'white';
+                
                 setTimeout(() => {
                     button.textContent = originalText;
-                    button.style.background = '#3b82f6';
+                    button.style.background = originalBg || '#374151';
+                    button.style.color = 'white';
                 }, 2000);
             }).catch(err => {
                 console.error('复制失败:', err);
+                
                 // 降级方案：选中文本
-                const range = document.createRange();
-                range.selectNode(code);
-                window.getSelection().removeAllRanges();
-                window.getSelection().addRange(range);
+                try {
+                    const range = document.createRange();
+                    range.selectNode(code);
+                    window.getSelection().removeAllRanges();
+                    window.getSelection().addRange(range);
+                    
+                    // 提示用户手动复制
+                    button.textContent = '请手动复制';
+                    button.style.background = '#f59e0b';
+                    setTimeout(() => {
+                        button.textContent = '复制';
+                        button.style.background = '#374151';
+                    }, 3000);
+                } catch (selectErr) {
+                    console.error('选中文本也失败:', selectErr);
+                    button.textContent = '复制失败';
+                    button.style.background = '#ef4444';
+                    setTimeout(() => {
+                        button.textContent = '复制';
+                        button.style.background = '#374151';
+                    }, 3000);
+                }
             });
         }
+        
+        // 自动为所有代码块添加复制功能
+        function enhanceCodeBlocks() {
+            document.querySelectorAll('.code-block').forEach(block => {
+                const copyBtn = block.querySelector('.copy-btn');
+                if (copyBtn && !copyBtn.hasAttribute('data-enhanced')) {
+                    copyBtn.setAttribute('data-enhanced', 'true');
+                    copyBtn.addEventListener('click', () => copyCode(copyBtn));
+                }
+            });
+        }
+        
+        // 监听新消息，自动增强代码块
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList') {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            if (node.classList && node.classList.contains('message')) {
+                                setTimeout(enhanceCodeBlocks, 100);
+                            }
+                        }
+                    });
+                }
+            });
+        });
+        
+        // 开始监听
+        observer.observe(document.getElementById('messages'), {
+            childList: true,
+            subtree: true
+        });
     </script>
 </body>
 </html>`;
