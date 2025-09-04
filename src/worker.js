@@ -36,16 +36,9 @@ function getModelOptimalParams(modelKey, modelId) {
       };
       
     case 'gpt-oss-120b':
-      return {
-        ...baseParams
-        // 完全去掉reasoning参数，使用最简格式避免异步响应
-      };
-      
     case 'gpt-oss-20b':
-      return {
-        ...baseParams
-        // 完全去掉reasoning参数，使用最简格式避免异步响应
-      };
+      // GPT模型使用最简配置，不添加任何额外参数
+      return {};
       
     case 'llama-4-scout':
       return {
@@ -271,49 +264,29 @@ async function handleChat(request, env, corsHeaders) {
 
     try {
       if (selectedModel.use_input) {
-        // GPT模型使用最简化格式，完全按照官方示例
-        let inputParams;
+        // GPT模型最简单调用
+        const userInput = message === 'test' 
+          ? "What is the origin of the phrase Hello, World?"
+          : `${message}\n\n请用中文回答:`;
         
-        if (message === 'test') {
-          // 测试时使用官方示例的最简格式
-          inputParams = {
-            input: "What is the origin of the phrase Hello, World?"
-          };
+        console.log(`${selectedModel.name} 输入:`, userInput);
+        
+        response = await env.AI.run(selectedModel.id, {
+          input: userInput
+        });
+        
+        console.log(`${selectedModel.name} 响应:`, response);
+        
+        // 简单提取文本
+        if (typeof response === 'string') {
+          reply = response;
+        } else if (response && response.response) {
+          reply = response.response;
+        } else if (response && response.result) {
+          reply = response.result;
         } else {
-          // 尝试使用字符串格式的input，不使用消息数组
-          const contextText = recentHistory.length > 0 
-            ? `历史对话:\n${recentHistory.map(h => `${h.role}: ${h.content}`).join('\n')}\n\n当前问题: ${message}\n\n请用中文回答:`
-            : `问题: ${message}\n\n请用中文回答:`;
-            
-          inputParams = {
-            input: contextText
-          };
+          reply = 'GPT模型返回格式异常';
         }
-        
-        // 完全去掉reasoning等可能导致异步的参数
-        console.log(`${selectedModel.name} 最简请求参数:`, JSON.stringify(inputParams, null, 2));
-        
-        response = await env.AI.run(selectedModel.id, inputParams);
-        
-        // 详细调试GPT模型响应
-        console.log('=== GPT模型详细调试信息 ===');
-        console.log('1. 响应类型:', typeof response);
-        console.log('2. 响应内容:', JSON.stringify(response, null, 2));
-        
-        if (response && typeof response === 'object') {
-          console.log('3. 响应的所有键:', Object.keys(response));
-          console.log('4. 各字段详细分析:');
-          Object.entries(response).forEach(([key, value]) => {
-            console.log(`   - ${key}:`, {
-              type: typeof value,
-              value: typeof value === 'string' ? value : JSON.stringify(value),
-              isAsyncId: typeof value === 'string' && value.startsWith('resp_')
-            });
-          });
-        }
-        console.log('=== 调试信息结束 ===');
-        
-        reply = extractTextFromResponse(response, selectedModel);
         
       } else if (selectedModel.use_prompt) {
         // Gemma等模型
@@ -461,26 +434,18 @@ async function debugGPT(request, env, corsHeaders) {
     console.log('=== GPT调试模式 ===');
     console.log('输入消息:', message);
 
-    // 直接调用GPT模型，使用最简格式
+    // 最简GPT调用
     const response = await env.AI.run('@cf/openai/gpt-oss-20b', {
       input: message || 'Hello, World!'
     });
 
-    console.log('GPT原始响应:', response);
-    console.log('响应类型:', typeof response);
-    console.log('响应键:', response ? Object.keys(response) : []);
+    console.log('GPT响应:', response);
 
-    // 直接返回原始响应用于调试
+    // 直接返回原始响应
     return new Response(JSON.stringify({
       debug: true,
-      originalResponse: response,
-      responseType: typeof response,
-      responseKeys: response ? Object.keys(response) : [],
-      allFields: response ? Object.entries(response).map(([k, v]) => ({
-        key: k,
-        type: typeof v,
-        value: v
-      })) : []
+      response: response,
+      extractedText: extractTextFromResponse(response, null)
     }, null, 2), {
       headers: { 'Content-Type': 'application/json', ...corsHeaders }
     });
@@ -497,28 +462,16 @@ async function debugGPT(request, env, corsHeaders) {
   }
 }
 
-// 简化的响应文本提取函数
+// 简化的响应文本提取函数 - 不再检测异步ID
 function extractTextFromResponse(response, modelConfig) {
-  // 直接是字符串就返回，但要检查是否是异步ID
+  // 直接是字符串就返回
   if (typeof response === 'string') {
-    const text = response.trim();
-    if (text.startsWith('resp_')) {
-      return `抱歉，GPT模型返回了异步响应ID，当前版本不支持异步处理。
-
-建议您：
-1. 🔄 刷新页面重试
-2. 🤖 使用其他模型（推荐DeepSeek-R1或Llama-4-Scout）
-3. ✂️ 简化您的问题
-4. ⏰ 稍后再试
-
-其他模型都能正常工作，只有GPT模型偶尔会出现这个问题。`;
-    }
-    return text;
+    return response.trim() || '模型返回了空响应';
   }
   
   // 不是对象就返回错误
   if (!response || typeof response !== 'object') {
-    return '抱歉，AI模型返回了无效的响应格式。';
+    return 'AI模型返回了无效的响应格式';
   }
   
   // 检查常见字段
@@ -527,77 +480,28 @@ function extractTextFromResponse(response, modelConfig) {
   for (const field of fields) {
     if (response[field] && typeof response[field] === 'string') {
       const text = response[field].trim();
-      // 检查是否是异步响应ID
-      if (text.startsWith('resp_')) {
-        return `抱歉，GPT模型返回了异步响应ID，当前版本不支持异步处理。
-
-建议您：
-1. 🔄 刷新页面重试
-2. 🤖 使用其他模型（推荐DeepSeek-R1或Llama-4-Scout）
-3. ✂️ 简化您的问题
-4. ⏰ 稍后再试
-
-其他模型都能正常工作，只有GPT模型偶尔会出现这个问题。`;
-      }
-      return text;
+      if (text) return text;
     }
   }
   
   // 检查OpenAI格式
   if (response.choices?.[0]?.message?.content) {
-    const text = response.choices[0].message.content.trim();
-    if (text.startsWith('resp_')) {
-      return `抱歉，GPT模型返回了异步响应ID，当前版本不支持异步处理。
-
-建议您：
-1. 🔄 刷新页面重试  
-2. 🤖 使用其他模型（推荐DeepSeek-R1或Llama-4-Scout）
-3. ✂️ 简化您的问题
-4. ⏰ 稍后再试
-
-其他模型都能正常工作，只有GPT模型偶尔会出现这个问题。`;
-    }
-    return text;
+    return response.choices[0].message.content.trim() || '模型返回了空内容';
   }
   
   if (response.choices?.[0]?.text) {
-    const text = response.choices[0].text.trim();
-    if (text.startsWith('resp_')) {
-      return `抱歉，GPT模型返回了异步响应ID，当前版本不支持异步处理。
-
-建议您：
-1. 🔄 刷新页面重试
-2. 🤖 使用其他模型（推荐DeepSeek-R1或Llama-4-Scout）  
-3. ✂️ 简化您的问题
-4. ⏰ 稍后再试
-
-其他模型都能正常工作，只有GPT模型偶尔会出现这个问题。`;
-    }
-    return text;
+    return response.choices[0].text.trim() || '模型返回了空内容';
   }
   
-  // 查找任何字符串值
+  // 查找任何有效的字符串值
   for (const value of Object.values(response)) {
-    if (typeof value === 'string' && value.trim() && value.length > 5) {
-      const text = value.trim();
-      // 检查是否是异步响应ID
-      if (text.startsWith('resp_')) {
-        return `抱歉，GPT模型返回了异步响应ID，当前版本不支持异步处理。
-
-建议您：
-1. 🔄 刷新页面重试
-2. 🤖 使用其他模型（推荐DeepSeek-R1或Llama-4-Scout）
-3. ✂️ 简化您的问题  
-4. ⏰ 稍后再试
-
-其他模型都能正常工作，只有GPT模型偶尔会出现这个问题。`;
-      }
-      return text;
+    if (typeof value === 'string' && value.trim() && value.length > 2) {
+      return value.trim();
     }
   }
   
-  // 实在找不到就返回友好提示
-  return '抱歉，AI模型没有返回可读的内容，请稍后重试。';
+  // 返回调试信息
+  return `模型响应格式: ${JSON.stringify(response, null, 2)}`;
 }
 
 // 格式化Markdown内容
