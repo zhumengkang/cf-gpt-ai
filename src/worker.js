@@ -264,10 +264,14 @@ async function handleChat(request, env, corsHeaders) {
 
     try {
       if (selectedModel.use_input) {
-        // GPT模型最简单调用
-        const userInput = message === 'test' 
-          ? "What is the origin of the phrase Hello, World?"
-          : `${message}\n\n请用中文回答:`;
+        // GPT模型调用，使用更明确的提示
+        let userInput;
+        if (message === 'test') {
+          userInput = "What is the origin of the phrase Hello, World?";
+        } else {
+          // 给GPT更明确的中文回复指示
+          userInput = `请用中文回答以下问题：${message}`;
+        }
         
         console.log(`${selectedModel.name} 输入:`, userInput);
         
@@ -278,10 +282,10 @@ async function handleChat(request, env, corsHeaders) {
         console.log(`${selectedModel.name} 完整响应:`, JSON.stringify(response, null, 2));
         console.log(`响应的所有键:`, Object.keys(response || {}));
         
-        // 根据你提供的返回格式，直接提取文本
-        reply = extractTextFromResponse(response, selectedModel);
+        // 临时直接返回原始响应，不过滤
+        reply = `原始GPT响应: ${JSON.stringify(response, null, 2)}`;
         
-        console.log(`提取的文本:`, reply);
+        console.log(`直接返回原始响应`);
         
       } else if (selectedModel.use_prompt) {
         // Gemma等模型
@@ -470,10 +474,10 @@ function extractTextFromResponse(response, modelConfig) {
   }
   
   // 优先检查 GPT 模型常见的返回字段
-  // 根据你的返回格式，可能在这些字段中
+  // 根据实际测试，GPT 模型返回的文本在 reply 字段中
   const gptFields = [
-    'response', 'result', 'content', 'text', 'output', 'answer', 'message',
-    'completion', 'generated_text', 'prediction', 'reply'
+    'reply', 'response', 'result', 'content', 'text', 'output', 'answer', 'message',
+    'completion', 'generated_text', 'prediction'
   ];
   
   for (const field of gptFields) {
