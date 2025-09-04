@@ -37,20 +37,14 @@ function getModelOptimalParams(modelKey, modelId) {
       
     case 'gpt-oss-120b':
       return {
-        ...baseParams,
-        reasoning: {
-          effort: "medium",
-          summary: "auto"
-        }
+        ...baseParams
+        // 完全去掉reasoning参数，使用最简格式避免异步响应
       };
       
     case 'gpt-oss-20b':
       return {
-        ...baseParams,
-        reasoning: {
-          effort: "low", 
-          summary: "concise"
-        }
+        ...baseParams
+        // 完全去掉reasoning参数，使用最简格式避免异步响应
       };
       
     case 'llama-4-scout':
@@ -277,44 +271,27 @@ async function handleChat(request, env, corsHeaders) {
 
     try {
       if (selectedModel.use_input) {
-        // GPT模型使用官方文档格式：input 作为消息数组
-        let inputMessages;
+        // GPT模型使用最简化格式，完全按照官方示例
+        let inputParams;
         
         if (message === 'test') {
-          // 测试时使用简单格式
-          inputMessages = "What is the origin of the phrase Hello, World?";
+          // 测试时使用官方示例的最简格式
+          inputParams = {
+            input: "What is the origin of the phrase Hello, World?"
+          };
         } else {
-          // 构建消息数组格式，按照官方文档
-          inputMessages = [
-            {
-              role: "system", 
-              content: "你是一个智能AI助手，请务必用中文回答所有问题。无论用户使用什么语言提问，你都必须用中文回复。请确保你的回答完全使用中文，包括专业术语和代码注释。"
-            }
-          ];
-          
-          // 添加历史对话
-          if (recentHistory.length > 0) {
-            inputMessages.push(...recentHistory.map(h => ({ 
-              role: h.role, 
-              content: h.content 
-            })));
-          }
-          
-          // 添加当前用户消息
-          inputMessages.push({
-            role: "user",
-            content: message
-          });
+          // 尝试使用字符串格式的input，不使用消息数组
+          const contextText = recentHistory.length > 0 
+            ? `历史对话:\n${recentHistory.map(h => `${h.role}: ${h.content}`).join('\n')}\n\n当前问题: ${message}\n\n请用中文回答:`
+            : `问题: ${message}\n\n请用中文回答:`;
+            
+          inputParams = {
+            input: contextText
+          };
         }
         
-        const optimalParams = getModelOptimalParams(model, selectedModel.id);
-        
-        const inputParams = {
-          input: inputMessages,  // 按照官方文档：可以是字符串或消息数组
-          ...optimalParams
-        };
-        
-        console.log(`${selectedModel.name} 请求参数:`, JSON.stringify(inputParams, null, 2));
+        // 完全去掉reasoning等可能导致异步的参数
+        console.log(`${selectedModel.name} 最简请求参数:`, JSON.stringify(inputParams, null, 2));
         
         response = await env.AI.run(selectedModel.id, inputParams);
         
@@ -484,10 +461,9 @@ async function debugGPT(request, env, corsHeaders) {
     console.log('=== GPT调试模式 ===');
     console.log('输入消息:', message);
 
-    // 直接调用GPT模型
-    const response = await env.AI.run('@cf/openai/gpt-oss-120b', {
-      instructions: '你是一个智能AI助手，请用中文回答。',
-      input: message || '你好'
+    // 直接调用GPT模型，使用最简格式
+    const response = await env.AI.run('@cf/openai/gpt-oss-20b', {
+      input: message || 'Hello, World!'
     });
 
     console.log('GPT原始响应:', response);
