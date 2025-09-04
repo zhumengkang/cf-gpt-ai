@@ -554,9 +554,10 @@ function formatMarkdown(text) {
               .replace(/'/g, '&#39;');
   }
   
-  // 处理多行代码块
+  // 处理多行代码块 - 保持原始格式和换行
   text = text.replace(/```(\w+)?\n([\s\S]*?)```/g, (match, lang, code) => {
-    const escapedCode = escapeHtml(code.trim());
+    // 不要 trim，保持原始缩进和换行
+    const escapedCode = escapeHtml(code);
     return `<div class="code-block">
       <div class="code-header">
         <span class="language">${lang || 'text'}</span>
@@ -601,8 +602,21 @@ function formatMarkdown(text) {
   // 处理链接
   text = text.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" class="md-link">$1</a>');
   
-  // 处理换行
+  // 处理换行 - 但不要处理代码块内的换行
+  // 先用占位符保护代码块
+  const codeBlocks = [];
+  text = text.replace(/<div class="code-block">[\s\S]*?<\/div>/g, (match) => {
+    codeBlocks.push(match);
+    return `__CODE_BLOCK_${codeBlocks.length - 1}__`;
+  });
+  
+  // 处理非代码块的换行
   text = text.replace(/\n/g, '<br>');
+  
+  // 恢复代码块
+  codeBlocks.forEach((block, index) => {
+    text = text.replace(`__CODE_BLOCK_${index}__`, block);
+  });
   
   return text;
 }
