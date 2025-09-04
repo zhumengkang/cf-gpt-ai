@@ -275,18 +275,13 @@ async function handleChat(request, env, corsHeaders) {
           input: userInput
         });
         
-        console.log(`${selectedModel.name} 响应:`, response);
+        console.log(`${selectedModel.name} 完整响应:`, JSON.stringify(response, null, 2));
+        console.log(`响应的所有键:`, Object.keys(response || {}));
         
-        // 简单提取文本
-        if (typeof response === 'string') {
-          reply = response;
-        } else if (response && response.response) {
-          reply = response.response;
-        } else if (response && response.result) {
-          reply = response.result;
-        } else {
-          reply = 'GPT模型返回格式异常';
-        }
+        // 根据你提供的返回格式，直接提取文本
+        reply = extractTextFromResponse(response, selectedModel);
+        
+        console.log(`提取的文本:`, reply);
         
       } else if (selectedModel.use_prompt) {
         // Gemma等模型
@@ -462,7 +457,7 @@ async function debugGPT(request, env, corsHeaders) {
   }
 }
 
-// 简化的响应文本提取函数 - 不再检测异步ID
+// 修复的响应文本提取函数
 function extractTextFromResponse(response, modelConfig) {
   // 直接是字符串就返回
   if (typeof response === 'string') {
@@ -474,17 +469,31 @@ function extractTextFromResponse(response, modelConfig) {
     return 'AI模型返回了无效的响应格式';
   }
   
-  // 检查常见字段
-  const fields = ['response', 'result', 'content', 'text', 'output', 'answer', 'message'];
+  // 优先检查 GPT 模型常见的返回字段
+  // 根据你的返回格式，可能在这些字段中
+  const gptFields = [
+    'response', 'result', 'content', 'text', 'output', 'answer', 'message',
+    'completion', 'generated_text', 'prediction', 'reply'
+  ];
   
-  for (const field of fields) {
+  for (const field of gptFields) {
     if (response[field] && typeof response[field] === 'string') {
       const text = response[field].trim();
       if (text) return text;
     }
   }
   
-  // 检查OpenAI格式
+  // 检查嵌套的结果
+  if (response.result && typeof response.result === 'object') {
+    for (const field of gptFields) {
+      if (response.result[field] && typeof response.result[field] === 'string') {
+        const text = response.result[field].trim();
+        if (text) return text;
+      }
+    }
+  }
+  
+  // 检查 OpenAI 标准格式
   if (response.choices?.[0]?.message?.content) {
     return response.choices[0].message.content.trim() || '模型返回了空内容';
   }
@@ -493,15 +502,22 @@ function extractTextFromResponse(response, modelConfig) {
     return response.choices[0].text.trim() || '模型返回了空内容';
   }
   
-  // 查找任何有效的字符串值
-  for (const value of Object.values(response)) {
-    if (typeof value === 'string' && value.trim() && value.length > 2) {
-      return value.trim();
+  // 遍历所有字符串值，找到最长的有意义文本
+  let longestText = '';
+  for (const [key, value] of Object.entries(response)) {
+    if (typeof value === 'string' && value.trim() && value.length > longestText.length) {
+      // 排除一些明显不是内容的字段
+      if (!['usage', 'model', 'id', 'created', 'object'].includes(key)) {
+        longestText = value.trim();
+      }
     }
   }
   
-  // 返回调试信息
-  return `模型响应格式: ${JSON.stringify(response, null, 2)}`;
+  if (longestText) return longestText;
+  
+  // 如果还是找不到，返回完整的响应用于调试
+  console.log('无法提取文本，完整响应:', JSON.stringify(response, null, 2));
+  return `无法从响应中提取文本内容。响应结构: ${Object.keys(response).join(', ')}`;
 }
 
 // 格式化Markdown内容
