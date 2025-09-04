@@ -282,10 +282,10 @@ async function handleChat(request, env, corsHeaders) {
         console.log(`${selectedModel.name} 完整响应:`, JSON.stringify(response, null, 2));
         console.log(`响应的所有键:`, Object.keys(response || {}));
         
-        // 临时直接返回原始响应，不过滤
-        reply = `原始GPT响应: ${JSON.stringify(response, null, 2)}`;
+        // 根据实际数据结构提取文本
+        reply = extractTextFromResponse(response, selectedModel);
         
-        console.log(`直接返回原始响应`);
+        console.log(`提取的文本:`, reply);
         
       } else if (selectedModel.use_prompt) {
         // Gemma等模型
@@ -473,8 +473,20 @@ function extractTextFromResponse(response, modelConfig) {
     return 'AI模型返回了无效的响应格式';
   }
   
-  // 优先检查 GPT 模型常见的返回字段
-  // 根据实际测试，GPT 模型返回的文本在 reply 字段中
+  // 检查新的 GPT 格式：response.output[1].content[0].text
+  if (response.output && Array.isArray(response.output)) {
+    for (const outputItem of response.output) {
+      if (outputItem.type === 'message' && outputItem.content && Array.isArray(outputItem.content)) {
+        for (const contentItem of outputItem.content) {
+          if (contentItem.type === 'output_text' && contentItem.text) {
+            return contentItem.text.trim();
+          }
+        }
+      }
+    }
+  }
+  
+  // 检查旧的格式字段
   const gptFields = [
     'reply', 'response', 'result', 'content', 'text', 'output', 'answer', 'message',
     'completion', 'generated_text', 'prediction'
