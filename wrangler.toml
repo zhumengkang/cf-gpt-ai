@@ -1,0 +1,14 @@
+name = "cf-ai-chat"
+main = "src/worker.js"
+compatibility_date = "2025-08-25"
+
+[ai]
+binding = "AI"
+
+[[kv_namespaces]]
+binding = "CHAT_HISTORY"
+id = "3d9dc952826b434398ed08d8021cc9b0"
+preview_id = "3d9dc952826b434398ed08d8021cc9b0"
+
+[vars]
+CHAT_PASSWORD = "admin123"
