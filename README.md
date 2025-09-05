@@ -30,7 +30,7 @@
 
 1. **创建新 Worker**
    - 登录 Cloudflare Dashboard
-   - 选择 "Workers & Pages"
+   - 选择 "Workers"
    - 点击 "Create application"
    - 选择 "Create Worker"
    - 输入应用名称（推荐：`cf-ai-chat`）
@@ -387,3 +387,4 @@
 4. 遵守相关法律法规和 Cloudflare 服务条款
 
 **许可证**: 本项目采用 MIT 许可证，允许自由使用、修改和分发。
+
