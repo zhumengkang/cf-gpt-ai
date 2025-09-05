@@ -615,19 +615,19 @@ function formatMarkdown(text) {
               .replace(/'/g, '&#39;');
   }
   
-  // 处理多行代码块 - 保持原始格式和换行
+  // 处理多行代码块 - 使用简单可靠的方法
   text = text.replace(/```(\w+)?\n?([\s\S]*?)```/g, (match, lang, code) => {
-    // 保持原始缩进和换行，只去掉首尾空行
-    const cleanCode = code.replace(/^\n+|\n+$/g, '');
-    const escapedCode = escapeHtml(cleanCode);
-    const detectedLang = lang || detectLanguage(cleanCode);
+    const detectedLang = lang || detectLanguage(code);
+    
+    // 将原始代码编码为 base64，避免特殊字符问题
+    const encodedCode = btoa(unescape(encodeURIComponent(code)));
     
     return `<div class="code-block">
       <div class="code-header">
-        <span class="language">${detectedLang}</span>
-        <button class="copy-btn" onclick="copyCode(this)">复制</button>
+        <span class="language">${detectedLang.toUpperCase()}</span>
+        <button class="copy-btn" onclick="copyCodeBlock(this)" data-code="${encodedCode}">复制</button>
       </div>
-      <pre><code class="language-${detectedLang}">${escapedCode}</code></pre>
+      <pre><code class="language-${detectedLang}">${escapeHtml(code)}</code></pre>
     </div>`;
   });
   
@@ -802,8 +802,9 @@ function getHTML() {
             background: none; 
             padding: 0; 
             color: #1f2937;
-            white-space: pre-wrap;
-            word-break: break-word;
+            white-space: pre;
+            word-wrap: normal;
+            overflow-wrap: normal;
         }
         
         /* Markdown 样式 */
@@ -1114,85 +1115,96 @@ function getHTML() {
             setTimeout(() => div.remove(), 3000);
         }
         
-        // 增强的复制代码功能
-        function copyCode(button) {
-            const codeBlock = button.closest('.code-block');
-            const code = codeBlock.querySelector('pre code');
-            const text = code.textContent;
-            
-            navigator.clipboard.writeText(text).then(() => {
-                const originalText = button.textContent;
-                const originalBg = button.style.background;
+        // 完整的代码块复制功能
+        function copyCodeBlock(button) {
+            try {
+                // 从按钮的 data-code 属性获取编码的代码
+                const encodedCode = button.getAttribute('data-code');
                 
-                button.textContent = '已复制!';
-                button.style.background = '#10b981';
-                button.style.color = 'white';
+                if (!encodedCode) {
+                    throw new Error('未找到代码数据');
+                }
+                
+                // 解码代码
+                const code = decodeURIComponent(escape(atob(encodedCode)));
+                
+                console.log('准备复制的代码:');
+                console.log(code);
+                console.log('代码长度:', code.length);
+                
+                // 复制到剪贴板
+                navigator.clipboard.writeText(code).then(() => {
+                    // 显示成功状态
+                    const originalText = button.textContent;
+                    button.textContent = '✓ 已复制';
+                    button.style.background = '#10b981';
+                    button.style.color = 'white';
+                    
+                    setTimeout(() => {
+                        button.textContent = originalText;
+                        button.style.background = '#374151';
+                        button.style.color = 'white';
+                    }, 2000);
+                    
+                    console.log('✅ 代码复制成功');
+                }).catch(clipboardErr => {
+                    console.error('剪贴板复制失败:', clipboardErr);
+                    
+                    // 降级方案：选中代码文本
+                    try {
+                        const codeElement = button.closest('.code-block').querySelector('pre code');
+                        const range = document.createRange();
+                        range.selectNodeContents(codeElement);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        
+                        button.textContent = '已选中，请 Ctrl+C';
+                        button.style.background = '#f59e0b';
+                        
+                        setTimeout(() => {
+                            button.textContent = '复制';
+                            button.style.background = '#374151';
+                            selection.removeAllRanges();
+                        }, 3000);
+                        
+                    } catch (selectErr) {
+                        console.error('选中文本失败:', selectErr);
+                        button.textContent = '复制失败';
+                        button.style.background = '#ef4444';
+                        
+                        setTimeout(() => {
+                            button.textContent = '复制';
+                            button.style.background = '#374151';
+                        }, 3000);
+                    }
+                });
+                
+            } catch (error) {
+                console.error('代码解码失败:', error);
+                button.textContent = '解码失败';
+                button.style.background = '#ef4444';
                 
                 setTimeout(() => {
-                    button.textContent = originalText;
-                    button.style.background = originalBg || '#374151';
-                    button.style.color = 'white';
-                }, 2000);
+                    button.textContent = '复制';
+                    button.style.background = '#374151';
+                }, 3000);
+            }
+        }
+        
+        // 测试复制功能的辅助函数
+        function testCopyFunction() {
+            console.log('🧪 测试代码块复制功能...');
+            const testCode = 'def hello_world():\\n    print("Hello, World!")\\n    return True';
+            navigator.clipboard.writeText(testCode).then(() => {
+                console.log('✅ 剪贴板功能正常');
             }).catch(err => {
-                console.error('复制失败:', err);
-                
-                // 降级方案：选中文本
-                try {
-                    const range = document.createRange();
-                    range.selectNode(code);
-                    window.getSelection().removeAllRanges();
-                    window.getSelection().addRange(range);
-                    
-                    // 提示用户手动复制
-                    button.textContent = '请手动复制';
-                    button.style.background = '#f59e0b';
-                    setTimeout(() => {
-                        button.textContent = '复制';
-                        button.style.background = '#374151';
-                    }, 3000);
-                } catch (selectErr) {
-                    console.error('选中文本也失败:', selectErr);
-                    button.textContent = '复制失败';
-                    button.style.background = '#ef4444';
-                    setTimeout(() => {
-                        button.textContent = '复制';
-                        button.style.background = '#374151';
-                    }, 3000);
-                }
+                console.log('❌ 剪贴板功能异常:', err);
             });
         }
         
-        // 自动为所有代码块添加复制功能
-        function enhanceCodeBlocks() {
-            document.querySelectorAll('.code-block').forEach(block => {
-                const copyBtn = block.querySelector('.copy-btn');
-                if (copyBtn && !copyBtn.hasAttribute('data-enhanced')) {
-                    copyBtn.setAttribute('data-enhanced', 'true');
-                    copyBtn.addEventListener('click', () => copyCode(copyBtn));
-                }
-            });
-        }
-        
-        // 监听新消息，自动增强代码块
-        const observer = new MutationObserver((mutations) => {
-            mutations.forEach((mutation) => {
-                if (mutation.type === 'childList') {
-                    mutation.addedNodes.forEach((node) => {
-                        if (node.nodeType === Node.ELEMENT_NODE) {
-                            if (node.classList && node.classList.contains('message')) {
-                                setTimeout(enhanceCodeBlocks, 100);
-                            }
-                        }
-                    });
-                }
-            });
-        });
-        
-        // 开始监听
-        observer.observe(document.getElementById('messages'), {
-            childList: true,
-            subtree: true
-        });
+        // 页面加载完成后测试
+        setTimeout(testCopyFunction, 1000);
     </script>
 </body>
 </html>`;
