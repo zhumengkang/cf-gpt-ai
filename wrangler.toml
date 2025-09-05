@@ -5,10 +5,15 @@ compatibility_date = "2025-08-25"
 [ai]
 binding = "AI"
 
+# KV 存储配置（可选，用于聊天历史）
+# 需要先在 Cloudflare Dashboard 创建 KV 命名空间
+# 然后替换下面的 id 和 preview_id
 [[kv_namespaces]]
 binding = "CHAT_HISTORY"
-id = "3d9dc952826b434398ed08d8021cc9b0"
-preview_id = "3d9dc952826b434398ed08d8021cc9b0"
+id = "your_kv_namespace_id_here"
+preview_id = "your_kv_namespace_id_here"
 
+# 环境变量配置
+# 部署前请修改为安全的密码
 [vars]
-CHAT_PASSWORD = "admin123"
+CHAT_PASSWORD = "自己的密码"
