@@ -10,10 +10,11 @@ binding = "AI"
 # 然后替换下面的 id 和 preview_id
 [[kv_namespaces]]
 binding = "CHAT_HISTORY"
-id = "your_kv_namespace_id_here"
-preview_id = "your_kv_namespace_id_here"
+id = "自己KV的ID"
+preview_id = "自己KV的ID"
 
 # 环境变量配置
 # 部署前请修改为安全的密码
 [vars]
 CHAT_PASSWORD = "自己的密码"
+
